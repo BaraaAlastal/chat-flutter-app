@@ -1,60 +1,171 @@
+import 'package:chat_app_class/screens/login_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../constants.dart';
 
 class ChatScreen extends StatefulWidget {
+  static const id = 'chatScreen';
   @override
   _ChatScreenState createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final _firebaseAuth = FirebaseAuth.instance;
+  final _firestore = FirebaseFirestore.instance;
+  late User user;
+  dynamic messages;
+  TextEditingController controller = TextEditingController();
+  void getCurrentUser() {
+    user = _firebaseAuth.currentUser!;
+  }
+
+  @override
+  void initState() {
+    getCurrentUser();
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: null,
-        actions: <Widget>[
-          IconButton(
-              icon: Icon(Icons.close),
-              onPressed: () {
-                //Implement logout functionality
-              }),
-        ],
-        title: Text('⚡️Chat'),
-        backgroundColor: Colors.lightBlueAccent,
-      ),
-      body: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Container(
-              decoration: kMessageContainerDecoration,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  Expanded(
-                    child: TextField(
-                      onChanged: (value) {
-                        //Do something with the user input.
-                      },
-                      decoration: kMessageTextFieldDecoration,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      //Implement send functionality.
-                    },
-                    child: Text(
-                      'Send',
-                      style: kSendButtonTextStyle,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+        appBar: AppBar(
+          leading: null,
+          actions: <Widget>[
+            IconButton(
+                icon: Icon(Icons.logout),
+                onPressed: () {
+                  _firebaseAuth.signOut();
+                  Navigator.pushNamedAndRemoveUntil(
+                      context, LoginScreen.id, (route) => false);
+                }),
           ],
+          title: Text('⚡️Chat'),
+          backgroundColor: Colors.lightBlueAccent,
         ),
+        body: SafeArea(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              StreamBuilder(
+                  stream: _firestore
+                      .collection('messages')
+                      .orderBy('time', descending: true)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    //snapshot is a piece of returned data from firebase
+                    if (snapshot.hasData) {
+                      List<dynamic> messages = snapshot.data!.docs;
+
+                      return Expanded(
+                        child: ListView.builder(
+                            shrinkWrap: true,
+                            reverse: true,
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              return MessageBubble(
+                                messages: messages,
+                                index: index,
+                                sender: messages[index]['sender'],
+                                isMe: messages[index]['sender'] == user.email,
+                              );
+                            }),
+                      );
+                    }
+                    return Text('Loading data...');
+                  }),
+              Container(
+                decoration: kMessageContainerDecoration,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        decoration: kMessageTextFieldDecoration,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        print(controller.text);
+                        if (controller.text.isNotEmpty) {
+                          _firestore.collection('messages').add({
+                            'text': controller.text,
+                            'sender': user.email,
+                            'time': DateTime.now()
+                          });
+                          controller.clear();
+                        }
+                      },
+                      child: Text(
+                        'Send',
+                        style: kSendButtonTextStyle,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ));
+  }
+}
+
+class MessageBubble extends StatelessWidget {
+  const MessageBubble({
+    Key? key,
+    required this.messages,
+    required this.index,
+    required this.sender,
+    required this.isMe,
+  }) : super(key: key);
+
+  final List messages;
+  final int index;
+  final String sender;
+  final bool isMe;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment:
+            isMe ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+        children: [
+          Text(sender),
+          SizedBox(
+            height: 8,
+          ),
+          Material(
+              borderRadius: isMe
+                  ? BorderRadius.only(
+                      topRight: Radius.circular(10),
+                      bottomLeft: Radius.circular(10),
+                      bottomRight: Radius.circular(10),
+                    )
+                  : BorderRadius.only(
+                      topLeft: Radius.circular(10),
+                      bottomLeft: Radius.circular(10),
+                      bottomRight: Radius.circular(10),
+                    ),
+              color: isMe ? Colors.blueAccent : Colors.lightBlueAccent,
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: Text(
+                  '${messages[index]['text']}',
+                  style: TextStyle(color: Colors.white, fontSize: 20),
+                ),
+              ))
+        ],
       ),
     );
   }
